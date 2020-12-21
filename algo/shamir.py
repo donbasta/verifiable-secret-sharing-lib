@@ -25,18 +25,19 @@ class Polynomial:
         return res
 
 class ShamirHolder:
-    def __init__(self, point, share, prime):
+    def __init__(self, point, share, prime, vss=None):
         #share is the y coordinate, point is the x coordinate
         #prime is the prime used for the field
         self.point = point
         self.share = share
         self.prime = prime
+        self.vss = vss
     
     def __str__(self):
         return "x: {}, y: {}".format(self.point, self.share)
 
 class ShamirDealer:
-    def __init__(self, t, n, s=None, p=None, verif=False):
+    def __init__(self, t, n, s=None, p=None, vss="Feldman"):
         self.secret = s
         self.numholders = n
         self.threshold = t
@@ -58,7 +59,11 @@ class ShamirDealer:
             pass
         else:
             self.prime = p
-        self.polynomial = self.generate_polynomial()
+        self.vss = vss
+        if vss == "Feldman":
+            self.polynomial = self.generate_polynomial(c="secret")
+        elif vss == "Pedersen":
+            self.polynomial = (self.generate_polynomial(c="secret"), self.generate_polynomial())
         self.holders = self.generate_x()
     
     def set_secret(self, s):
@@ -80,8 +85,11 @@ class ShamirDealer:
             x_coordinates.append(a)
         return x_coordinates
     
-    def generate_polynomial(self):
-        koef = [self.secret]
+    def generate_polynomial(self, c=None):
+        if c == "secret":
+            koef = [self.secret]
+        else:
+            koef = [random.randint(0, self.prime - 1)]
         for i in range(1, self.threshold):
             #generate random integers between 0 and p - 1 inclusive
             a = random.randint(0, self.prime - 1)
@@ -90,13 +98,40 @@ class ShamirDealer:
     
     def generate_share(self):
         shares = []
-        for point in self.holders:
-            share = self.polynomial.calc(point)
-            shares.append((point, share, self.prime))
+        if self.vss == "Feldman":
+            for point in self.holders:
+                share = self.polynomial.calc(point)
+                shares.append((point, share, self.prime))
+        elif self.vss == "Pedersen":
+            for point in self.holders:
+                share0 = self.polynomial[0].calc(point)
+                share1 = self.polynomial[1].calc(point)
+                shares.append((point, (share0, share1), self.prime))
         self.shares = shares
     
-    def generate_validate(self):
-        pass
+    def generate_commitments(self):
+        p = self.prime
+        q = 2 * p + 1
+        g = semi_primitive_root(q)
+        print("generator: {}, prime: {}".format(g, q))
+        if self.vss == "Feldman":
+            koefs = self.polynomial.coefficients
+            commits = [pow(g, koef, q) for koef in koefs]
+            h = None
+            return Commit(commits, g, h, q, self.vss)
+        elif self.vss == "Pedersen":
+            koefs0 = self.polynomial[0].coefficients
+            koefs1 = self.polynomial[1].coefficients
+            print(koefs0, koefs1)
+            # h = random.randint(2, q - 1)
+            h = semi_primitive_root(q)
+            while h == g:
+                h = semi_primitive_root(q)
+            print("g = {}, h = {}".format(g, h))
+            # print(pow(g, koefs0[0], q) * pow(h, koefs1[0], q))
+            commits = [(pow(g, koefs0[i], q) * pow(h, koefs1[i], q) % q) for i in range(len(koefs0))]
+            # commits = [(pow(g, koefs0[i], q) * pow(h, koefs1[i], q) % q) for i in range()]
+            return Commit(commits, g, h, q, self.vss)
     
     def distribute(self):
         self.generate_share()
@@ -105,10 +140,13 @@ class ShamirDealer:
         ]
 
 class Commit:
-    def __init__(self, commits, g, p):
+    def __init__(self, commits, g, h, p, vss="Feldman"):
         self.generator = g
         self.prime = p
         self.commits = commits
+        self.vss = vss
+        if vss == "Pedersen":
+            self.other = h
 
 def distribute_commit(dealer):
     p = dealer.prime
@@ -120,20 +158,30 @@ def distribute_commit(dealer):
     print("generator: {}, prime: {}".format(g, q))
     koefs = dealer.polynomial.coefficients
     commits = [pow(g, koef, q) for koef in koefs]
-    return Commit(commits, g, q)
+    h = None
+    return Commit(commits, g, h, q)
 
 def validate(commit, holder):
     point = holder.point
     share = holder.share
     commits = commit.commits
+    vss = commit.vss
     p = commit.prime
     g = commit.generator
-    cek1 = 1
-    for i in range(len(commits)):
-        cek1 = (cek1 * pow(commits[i], pow(point, i, p - 1), p)) % p
-    cek2 = pow(g, share, p)
-    print("{} {} {} {}".format(point, share, cek1, cek2))
-    return cek1 == cek2
+    if vss == "Feldman":
+        cek1 = 1
+        for i in range(len(commits)):
+            cek1 = (cek1 * pow(commits[i], pow(point, i, p - 1), p)) % p
+        cek2 = pow(g, share, p)
+        print("{} {} {} {}".format(point, share, cek1, cek2))
+        return cek1 == cek2
+    elif vss == "Pedersen":
+        cek1 = 1
+        for i in range(len(commits)):
+            cek1 = (cek1 * pow(commits[i], pow(point, i, p - 1), p)) % p
+        h = commit.other
+        cek2 = (pow(g, share[0], p) * pow(h, share[1], p)) % p
+        return cek1 == cek2
 
 def interpolate(points, mod, calc):
     res = 0
@@ -162,11 +210,11 @@ def reconstruction(holders, threshold):
 
 if __name__ == "__main__":
 
-    t = 3
-    n = 5
+    t = 5
+    n = 10
     secret = 23456
-    dealer = ShamirDealer(t, n, secret, verif=True)
-    print("Polynomial: {}".format(dealer.polynomial.coefficients))
+    dealer = ShamirDealer(t, n, secret, None, "Pedersen")
+    # print("Polynomial: {}".format(dealer.polynomial.coefficients))
     holders = dealer.distribute()
     print("prime: {}".format(dealer.prime))
 
@@ -200,7 +248,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(e)
     
-    commit = distribute_commit(dealer)
+    # commit = distribute_commit(dealer)
+    commit = dealer.generate_commitments()
     print("commits: {}".format([c for c in commit.commits]))
     for holder in holders:
         print(validate(commit, holder))

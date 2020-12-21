@@ -1,5 +1,6 @@
 from math import gcd
 from primelibpy import Prime as p
+import random
 
 def pollard_rho(n):
     x = 2
@@ -29,15 +30,23 @@ def semi_primitive_root(p):
         i += 1
     if n > 1:
         fact.append(n)
-    
+    print("fact", fact)
+    lul = []
     for res in range(2, p):
         ok = True
         ok &= (pow(res, phi, p) == 1)
         for prfact in fact:
             ok &= (pow(res, phi // prfact, p) != 1)
         if ok:
-            return res
-    return -1
+            # print("res", res)
+            lul.append(res)
+        if len(lul) >= 2:
+            break
+    sz = len(lul)
+    if sz == 0:
+        return -1
+    else:
+        return lul[random.randint(0, sz - 1)]
 
 def primitive_root(p):
     phi = p - 1
