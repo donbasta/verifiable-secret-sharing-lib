@@ -1,4 +1,7 @@
 from Crypto.Util.number import getPrime
+from primelibpy import Prime as pr
+from const import SOPHIE_GERMAIN_PRIMES as sgp
+from util import semi_primitive_root
 import math
 import random
 
@@ -33,16 +36,25 @@ class ShamirHolder:
         return "x: {}, y: {}".format(self.point, self.share)
 
 class ShamirDealer:
-    def __init__(self, t, n, s=None, p=None):
+    def __init__(self, t, n, s=None, p=None, verif=False):
         self.secret = s
         self.numholders = n
         self.threshold = t
         if p == None:
-            dig = math.ceil(max(math.log2(n), math.log2(s)))
-            bit = random.randint(dig + 1, 2 * dig)
+            # dig = math.ceil(max(math.log2(n), math.log2(s)))
+            # bit = random.randint(2 * dig + 1, 4 * dig)
+            # if verif:
+            #     print("tes: {} {}".format(2**bit, 2**(bit+1)))
+            #     self.prime = pr.getSophieGermainPrime(2 ** bit, 2 ** (bit + 1))[0]
+            #     self.qrime = 2 * self.prime + 1
             #generate big prime p here using lib,
             #greater than s and n
-            self.prime = getPrime(bit)
+            # self.prime = getPrime(bit)
+            # cur = (sgp[-1] * 2) + 1
+            cur = sgp[-1]
+            if cur < s or cur < n:
+                raise Exception("Number of holder or the secret is too big")
+            self.prime = cur
             pass
         else:
             self.prime = p
@@ -92,6 +104,37 @@ class ShamirDealer:
             ShamirHolder(self.shares[i][0], self.shares[i][1], self.prime) for i in range(len(self.shares))
         ]
 
+class Commit:
+    def __init__(self, commits, g, p):
+        self.generator = g
+        self.prime = p
+        self.commits = commits
+
+def distribute_commit(dealer):
+    p = dealer.prime
+    # q = (p - 1) // 2 #safe prime of the sophie germain prime p
+    q = 2 * p + 1
+    # q = p
+    # g = semi_primitive_root(p)
+    g = semi_primitive_root(q)
+    print("generator: {}, prime: {}".format(g, q))
+    koefs = dealer.polynomial.coefficients
+    commits = [pow(g, koef, q) for koef in koefs]
+    return Commit(commits, g, q)
+
+def validate(commit, holder):
+    point = holder.point
+    share = holder.share
+    commits = commit.commits
+    p = commit.prime
+    g = commit.generator
+    cek1 = 1
+    for i in range(len(commits)):
+        cek1 = (cek1 * pow(commits[i], pow(point, i, p - 1), p)) % p
+    cek2 = pow(g, share, p)
+    print("{} {} {} {}".format(point, share, cek1, cek2))
+    return cek1 == cek2
+
 def interpolate(points, mod, calc):
     res = 0
     for (x, y) in points:
@@ -116,22 +159,21 @@ def reconstruction(holders, threshold):
         raise Exception("Not enough information to reconstruct secret")
     points = [(holder.point, holder.share) for holder in holders]
     return interpolate(points, mod, 0)
-    
-def validate():
-    pass
 
 if __name__ == "__main__":
 
-    t = 8
-    n = 10
-    secret = 123456789101112131415
-    dealer = ShamirDealer(t, n, secret)
+    t = 3
+    n = 5
+    secret = 23456
+    dealer = ShamirDealer(t, n, secret, verif=True)
+    print("Polynomial: {}".format(dealer.polynomial.coefficients))
     holders = dealer.distribute()
+    print("prime: {}".format(dealer.prime))
 
     i = 0
     for holder in holders:
         i += 1
-        print("The {}th holder holds following share".format(i), end='')
+        print("The {}th holder holds following share: ".format(i), end='')
         print(holder)
 
     try:
@@ -157,6 +199,11 @@ if __name__ == "__main__":
         print(rec)
     except Exception as e:
         print(e)
+    
+    commit = distribute_commit(dealer)
+    print("commits: {}".format([c for c in commit.commits]))
+    for holder in holders:
+        print(validate(commit, holder))
 
 
 
