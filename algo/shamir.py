@@ -4,6 +4,7 @@ from const import SOPHIE_GERMAIN_PRIMES as sgp
 from util import semi_primitive_root
 import math
 import random
+import time
 
 class Polynomial:
     def __init__(self, c, p):
@@ -113,7 +114,7 @@ class ShamirDealer:
         p = self.prime
         q = 2 * p + 1
         g = semi_primitive_root(q)
-        print("generator: {}, prime: {}".format(g, q))
+        # print("generator: {}, prime: {}".format(g, q))
         if self.vss == "Feldman":
             koefs = self.polynomial.coefficients
             commits = [pow(g, koef, q) for koef in koefs]
@@ -122,12 +123,12 @@ class ShamirDealer:
         elif self.vss == "Pedersen":
             koefs0 = self.polynomial[0].coefficients
             koefs1 = self.polynomial[1].coefficients
-            print(koefs0, koefs1)
+            # print(koefs0, koefs1)
             # h = random.randint(2, q - 1)
             h = semi_primitive_root(q)
             while h == g:
                 h = semi_primitive_root(q)
-            print("g = {}, h = {}".format(g, h))
+            # print("g = {}, h = {}".format(g, h))
             # print(pow(g, koefs0[0], q) * pow(h, koefs1[0], q))
             commits = [(pow(g, koefs0[i], q) * pow(h, koefs1[i], q) % q) for i in range(len(koefs0))]
             # commits = [(pow(g, koefs0[i], q) * pow(h, koefs1[i], q) % q) for i in range()]
@@ -155,7 +156,7 @@ def distribute_commit(dealer):
     # q = p
     # g = semi_primitive_root(p)
     g = semi_primitive_root(q)
-    print("generator: {}, prime: {}".format(g, q))
+    # print("generator: {}, prime: {}".format(g, q))
     koefs = dealer.polynomial.coefficients
     commits = [pow(g, koef, q) for koef in koefs]
     h = None
@@ -173,7 +174,7 @@ def validate(commit, holder):
         for i in range(len(commits)):
             cek1 = (cek1 * pow(commits[i], pow(point, i, p - 1), p)) % p
         cek2 = pow(g, share, p)
-        print("{} {} {} {}".format(point, share, cek1, cek2))
+        # print("{} {} {} {}".format(point, share, cek1, cek2))
         return cek1 == cek2
     elif vss == "Pedersen":
         cek1 = 1
@@ -210,50 +211,59 @@ def reconstruction(holders, threshold):
 
 if __name__ == "__main__":
 
-    t = 5
-    n = 10
-    secret = 23456
-    dealer = ShamirDealer(t, n, secret, None, "Pedersen")
-    # print("Polynomial: {}".format(dealer.polynomial.coefficients))
-    holders = dealer.distribute()
-    print("prime: {}".format(dealer.prime))
+    # t = 7
+    # n = 10
+    # secret = 2345678910
+    # dealer = ShamirDealer(t, n, secret, None, "Pedersen")
+    # # print("Polynomial: {}".format(dealer.polynomial.coefficients))
+    # holders = dealer.distribute()
+    # print("prime: {}".format(dealer.prime))
 
-    i = 0
-    for holder in holders:
-        i += 1
-        print("The {}th holder holds following share: ".format(i), end='')
-        print(holder)
-
-    try:
-        rec = reconstruction(holders[:7], t)
-        print(rec)
-    except Exception as e:
-        print(e)
-
-    try:
-        rec = reconstruction(holders[:8], t)
-        print(rec)
-    except Exception as e:
-        print(e)
+    # i = 0
+    # for holder in holders:
+    #     i += 1
+    #     print("The {}th holder holds following share: ".format(i), end='')
+    #     print(holder)
     
-    try:
-        rec = reconstruction(holders, t)
-        print(rec)
-    except Exception as e:
-        print(e)
-    
-    try:
-        rec = reconstruction(holders[1:], t)
-        print(rec)
-    except Exception as e:
-        print(e)
-    
-    # commit = distribute_commit(dealer)
-    commit = dealer.generate_commitments()
-    print("commits: {}".format([c for c in commit.commits]))
-    for holder in holders:
-        print(validate(commit, holder))
+    # # commit = distribute_commit(dealer)
+    # commit = dealer.generate_commitments()
+    # print("commits: {}".format([c for c in commit.commits]))
+    # for holder in holders:
+    #     print(validate(commit, holder))
 
+    attempt = 0
+    secret = 2345678910
+    for ns in [5, 10, 25, 100, 500, 1000]:
+        attempt += 1
+        # ts = ((3 * ns) // 4)
+        # ts = ns - 1
+        ts = 5
+        secret = 2345678910
+
+        s1 = time.time()
+        dealer1 = ShamirDealer(ts, ns, secret, None, "Feldman")
+        holders1 = dealer1.distribute()
+        commit1 = dealer1.generate_commitments()
+        ok = True
+        for holder in holders1:
+            ok &= validate(commit1, holder)
+        assert ok == True
+        e1 = time.time()
+
+        s2 = time.time()
+        dealer2 = ShamirDealer(ts, ns, secret, None, "Pedersen")
+        holders2 = dealer2.distribute()
+        commit2 = dealer2.generate_commitments()
+        ok = True
+        for holder in holders2:
+            ok &= validate(commit2, holder)
+        assert ok == True
+        e2 = time.time()
+
+        print("Attempt for {} participants and threshold = {}".format(ns, ts))
+        print("Feldman: {} ms".format(1000 * (e1 - s1)))
+        print("Pedersen: {} ms".format(1000 * (e2 - s2)))
+        print("--------------------------------------------------------------")
 
 
     

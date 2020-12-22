@@ -30,7 +30,6 @@ def semi_primitive_root(p):
         i += 1
     if n > 1:
         fact.append(n)
-    print("fact", fact)
     lul = []
     for res in range(2, p):
         ok = True
